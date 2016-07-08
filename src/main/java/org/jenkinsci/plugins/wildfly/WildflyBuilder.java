@@ -118,6 +118,8 @@ public class WildflyBuilder extends Builder {
     		
     		String adjustedWar = checkEnvironmentWarFile(build,listener,war);
     		
+    		String applicationName = extractApplicationName(adjustedWar); 
+    		
     		int portAsInt = Integer.parseInt(port);
     		   				    		
     		FilePath fp = new FilePath(build.getWorkspace(), adjustedWar);
@@ -148,12 +150,12 @@ public class WildflyBuilder extends Builder {
     		listener.getLogger().println("Connected to WildFly at "+host+":"+port); 		
     		
     		// if application exists, undeploy it first...
-    		if (applicationExists(cli, adjustedWar, server)) {
-    			listener.getLogger().println("Application "+adjustedWar+" exists, undeploying...");
+    		if (applicationExists(cli, applicationName, server)) {
+    			listener.getLogger().println("Application "+applicationName+" exists, undeploying...");
     			if (server.length() > 0)
-    				result = cli.cmd("undeploy "+adjustedWar+" --server-groups="+server);
+    				result = cli.cmd("undeploy "+applicationName+" --server-groups="+server);
     			else
-    				result = cli.cmd("undeploy "+adjustedWar);
+    				result = cli.cmd("undeploy "+applicationName);
     			response = getWildFlyResponse(result);
     			if (response.indexOf("{\"outcome\" => \"failed\"") >= 0) {
         			listener.fatalError(response);
@@ -162,7 +164,7 @@ public class WildflyBuilder extends Builder {
             		listener.getLogger().println(response);
     		}
 
-    		listener.getLogger().println("Deploying "+adjustedWar+" ...");
+    		listener.getLogger().println("Deploying "+applicationName+" (from "+adjustedWar+") ...");
     		if (server.length() > 0)
     			result = cli.cmd("deploy "+warPath+" --server-groups="+server);
     		else
@@ -191,8 +193,7 @@ public class WildflyBuilder extends Builder {
     }
     
     
-    private String checkEnvironmentWarFile(AbstractBuild build, BuildListener listener, String inputWar)
-    {        
+    private String checkEnvironmentWarFile(AbstractBuild build, BuildListener listener, String inputWar) {        
         try {
             if (inputWar.startsWith("$")) {
             	String searchEnv = inputWar.substring(1);
@@ -207,6 +208,18 @@ public class WildflyBuilder extends Builder {
         }
 
         return inputWar;
+    }
+    
+    private String extractApplicationName(String inputWarFile) {
+    	try {
+    		if(inputWarFile.contains("/")) {
+	    		String[] explode = inputWarFile.split("/");
+	    		return(explode[explode.length-1]);
+    		}
+    	} catch (Exception e) {
+    		return inputWarFile;
+    	}
+    	return inputWarFile;
     }
        
     private boolean applicationExists(CLI cli, String war, String server) {
