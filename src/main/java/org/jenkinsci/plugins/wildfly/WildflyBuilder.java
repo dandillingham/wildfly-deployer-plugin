@@ -28,6 +28,7 @@ import jenkins.model.Jenkins;
 import org.jenkinsci.remoting.RoleChecker;
 
 import hudson.Launcher;
+import hudson.EnvVars;
 import hudson.Extension;
 import hudson.FilePath;
 import hudson.util.FormValidation;
@@ -114,20 +115,22 @@ public class WildflyBuilder extends Builder {
     		port.trim();
     		server.trim();
     		war.trim();
-    		  	   		
+    		
+    		String adjustedWar = checkEnvironmentWarFile(build,listener,war);
+    		
     		int portAsInt = Integer.parseInt(port);
     		   				    		
-    		FilePath fp = new FilePath(build.getWorkspace(), war);
+    		FilePath fp = new FilePath(build.getWorkspace(), adjustedWar);
     		remotePath=fp.getRemote();
     		if (! fp.exists()) {
-    			listener.fatalError("The '"+war+"' file does not exist in workspace.");
+    			listener.fatalError("The '"+adjustedWar+"' file does not exist in workspace.");
     			return false;
     		}	    			
     		 		
     		// if running on a remote slave, copy the WAR file to the master so CLI (which must run on the master) can access it
     		if (fp.isRemote()) {
     			localPath = Jenkins.getInstance().getWorkspaceFor((TopLevelItem)build.getProject().getRootProject()).getRemote();     		
-    			localPath=localPath.concat("/"+war);
+    			localPath=localPath.concat("/"+adjustedWar);
     			localFP = new FilePath(new File(localPath));
     			fp.act(new GrabWARFile(localFP));
     			warPath = localPath;
@@ -145,12 +148,12 @@ public class WildflyBuilder extends Builder {
     		listener.getLogger().println("Connected to WildFly at "+host+":"+port); 		
     		
     		// if application exists, undeploy it first...
-    		if (applicationExists(cli, war, server)) {
-    			listener.getLogger().println("Application "+war+" exists, undeploying...");
+    		if (applicationExists(cli, adjustedWar, server)) {
+    			listener.getLogger().println("Application "+adjustedWar+" exists, undeploying...");
     			if (server.length() > 0)
-    				result = cli.cmd("undeploy "+war+" --server-groups="+server);
+    				result = cli.cmd("undeploy "+adjustedWar+" --server-groups="+server);
     			else
-    				result = cli.cmd("undeploy "+war);
+    				result = cli.cmd("undeploy "+adjustedWar);
     			response = getWildFlyResponse(result);
     			if (response.indexOf("{\"outcome\" => \"failed\"") >= 0) {
         			listener.fatalError(response);
@@ -159,7 +162,7 @@ public class WildflyBuilder extends Builder {
             		listener.getLogger().println(response);
     		}
 
-    		listener.getLogger().println("Deploying "+war+" ...");
+    		listener.getLogger().println("Deploying "+adjustedWar+" ...");
     		if (server.length() > 0)
     			result = cli.cmd("deploy "+warPath+" --server-groups="+server);
     		else
@@ -185,6 +188,25 @@ public class WildflyBuilder extends Builder {
     	    	
         return true;
         
+    }
+    
+    
+    private String checkEnvironmentWarFile(AbstractBuild build, BuildListener listener, String inputWar)
+    {        
+        try {
+            if (inputWar.startsWith("$")) {
+            	String searchEnv = inputWar.substring(1);
+            	EnvVars envVars = new EnvVars();
+            	envVars = build.getEnvironment(listener);
+            	inputWar = envVars.get(searchEnv,inputWar);
+            }
+        }catch(Exception e){
+            e.printStackTrace();
+            listener.fatalError(e.getMessage());
+            return inputWar;
+        }
+
+        return inputWar;
     }
        
     private boolean applicationExists(CLI cli, String war, String server) {
@@ -258,6 +280,8 @@ public class WildflyBuilder extends Builder {
                 throws IOException, ServletException {
             if (value.length() == 0)
                 return FormValidation.error("Please specify a WAR or EAR filename.");
+            if (value.toLowerCase().startsWith("$"))
+            	return FormValidation.warning("Make sure that you are using existing environment variable.");
             if (! value.toLowerCase().contains(".war".toLowerCase()) && ! value.toLowerCase().contains(".ear".toLowerCase()))  
             	return FormValidation.error("Please specify a valid WAR or EAR filename."); 
             if (value.length() < 7)
