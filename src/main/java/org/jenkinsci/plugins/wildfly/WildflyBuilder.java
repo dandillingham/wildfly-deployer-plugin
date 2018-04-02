@@ -28,6 +28,7 @@ import jenkins.model.Jenkins;
 import org.jenkinsci.remoting.RoleChecker;
 
 import hudson.Launcher;
+import hudson.EnvVars;
 import hudson.Extension;
 import hudson.FilePath;
 import hudson.util.FormValidation;
@@ -57,7 +58,7 @@ import org.jboss.dmr.ModelNode;
  */
 public class WildflyBuilder extends Builder {
 
-    private final String war;
+    private String war;
     private final String host;
     private final String port;
     private final String username;
@@ -116,7 +117,9 @@ public class WildflyBuilder extends Builder {
     		war.trim();
     		  	   		
     		int portAsInt = Integer.parseInt(port);
-    		   				    		
+    		
+    		this.war = makeProperWar(build, listener, war);
+    		
     		FilePath fp = new FilePath(build.getWorkspace(), war);
     		remotePath=fp.getRemote();
     		if (! fp.exists()) {
@@ -185,6 +188,25 @@ public class WildflyBuilder extends Builder {
     	    	
         return true;
         
+    }
+    
+    
+    private String makeProperWar(AbstractBuild build, BuildListener listener, String inputWar)
+    {        
+        try {
+            if (inputWar.startsWith("$")) {
+            	String searchEnv = inputWar.substring(1);
+            	EnvVars envVars = new EnvVars();
+            	envVars = build.getEnvironment(listener);
+            	inputWar = envVars.get(searchEnv,inputWar);
+            }
+        }catch(Exception e){
+            e.printStackTrace();
+            listener.fatalError(e.getMessage());
+            return inputWar;
+        }
+
+        return inputWar;
     }
        
     private boolean applicationExists(CLI cli, String war, String server) {
@@ -309,7 +331,7 @@ public class WildflyBuilder extends Builder {
         }
 
         public String getDisplayName() {
-            return "Deploy WAR/EAR to WildFly";
+            return "Deploy WAR/EAR to WildFly - IFD";
         }
 
         @Override
